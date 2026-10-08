@@ -155,8 +155,11 @@ git works in the container. Its `config`, `hooks` and `modules` (submodules'
 git directories) are read-only, as is each worktree's `config.worktree` when
 `extensions.worktreeConfig` is on: those are what make git run programs, and
 the agent could otherwise plant one that runs on your machine the next time you
-use git there. The agent can still commit, branch and change refs in the whole
-repository, not only its worktree's branch. A worktree made with relative
+use git in your main checkout. The worktree itself is a workspace like any
+other: the agent can rewrite its `.git` file to point at a git directory of its
+own, so check that file before running git in the worktree on your machine.
+The agent can also commit, branch and change refs in the whole repository, not
+only its worktree's branch. A worktree made with relative
 paths (`git worktree add --relative-paths`) isn't mounted; clod says so.
 
 ## Codex
