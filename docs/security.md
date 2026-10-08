@@ -14,6 +14,9 @@ without asking:
   you copy in. So the agent can push to git only
   if you've given that home credentials that allow it. Give each home only
   what its work needs.
+- **The main repository's `.git`, when the project is a git worktree**: its
+  objects and refs read-write, its config, hooks and submodules read-only (see
+  [Git worktrees](usage.md#git-worktrees)).
 - **The variables you pass in** from `.envrc`, tokens included.
 - **The network**, including services on your machine through
   `host.docker.internal`.

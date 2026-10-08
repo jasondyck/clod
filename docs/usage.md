@@ -146,6 +146,19 @@ gh auth login            # then: gh auth setup-git, so git pushes use it
 Whatever you log into here, the agent can use: give each home only what its
 work needs.
 
+### Git worktrees
+
+A [linked worktree](https://git-scm.com/docs/git-worktree)'s `.git` is a file
+pointing into the main repository's `.git`, which is outside the workspace.
+When the workspace is one, clod also mounts that `.git` at the same path, so
+git works in the container. Its `config`, `hooks` and `modules` (submodules'
+git directories) are read-only, as is each worktree's `config.worktree` when
+`extensions.worktreeConfig` is on: those are what make git run programs, and
+the agent could otherwise plant one that runs on your machine the next time you
+use git there. The agent can still commit, branch and change refs in the whole
+repository, not only its worktree's branch. A worktree made with relative
+paths (`git worktree add --relative-paths`) isn't mounted; clod says so.
+
 ## Codex
 
 Codex CLI installs from the official `@openai/codex` npm package into the home

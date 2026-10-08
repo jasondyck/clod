@@ -28,7 +28,7 @@ repo=$(cd "$(dirname "$0")/.." && pwd -P)
 export LC_ALL=C.UTF-8
 
 lint_tests='lint'
-base_tests='env run-command terminal mount-paths scratch workspace refuses-home claude claude-args codex statusline
+base_tests='env run-command terminal mount-paths scratch workspace worktree refuses-home claude claude-args codex statusline
   port port-busy clipboard show-image docker-socket envrc volume-home home-copy home-new volume-workspace default shared command-line help
   multi-stage combine live-files rebuild image-edit image-diff image-rm image-clean image-prune devcontainer-names
   completion update install'
@@ -208,6 +208,30 @@ test_workspace() {
   if clod -w vol:wtest env | has '^envrc:'; then false; fi
   exits 1 clod -w vol:./x env
   docker volume rm clod-workspace-wtest >/dev/null
+}
+
+test_worktree() {
+  git init -q -b main repo
+  git -C repo -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+  git -C repo worktree add -q ../wt -b feature
+  clod -w wt bash -c '
+    set -e
+    cd /workspace
+    git -c user.name=t -c user.email=t@t commit -q --allow-empty -m inside
+    test "$(git branch --show-current)" = feature
+    common=$(git rev-parse --path-format=absolute --git-common-dir)
+    if touch "$common/hooks/pre-commit" 2>/dev/null; then false; fi
+    if git config core.fsmonitor x 2>/dev/null; then false; fi
+  ' 2>&1 | has ' · git .*/repo/.git'
+  test "$(git -C repo log -1 --format=%s feature)" = inside
+  test ! -e repo/.git/hooks/pre-commit
+  test -z "$(git -C repo config --get core.fsmonitor || true)"
+  # a worktree's config.worktree, with worktreeConfig, is read-only too
+  git -C repo config extensions.worktreeConfig true
+  clod -w wt bash -c 'cd /workspace; if git config --worktree core.fsmonitor x 2>/dev/null; then false; fi'
+  # a relative gitdir is left alone, with a note
+  echo 'gitdir: ../repo/.git/worktrees/wt' > wt/.git
+  clod -w wt bash -c true 2>&1 | has 'relative gitdir'
 }
 
 test_refuses_home() {

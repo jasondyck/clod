@@ -3029,8 +3029,59 @@ start_clipboard() {
   REPLY=http://host.docker.internal:$port/$token
 }
 
+# A linked git worktree's .git is a file naming its git directory inside the
+# main repository's .git, outside the workspace, so git fails in the container.
+# Mounts that repository's .git at the same path, read-write for objects, refs
+# and the worktree's index, with what makes git run programs read-only: its
+# config, hooks and submodules' git directories, and with worktreeConfig the
+# worktrees' config.worktree. Otherwise the agent could plant a hook that runs
+# on the host the next time you use git there. Appends to run_args. Reads the
+# files, never runs git on the workspace, whose .git the agent can rewrite.
+worktree_mounts() {
+  local ws=$1 line gitdir common f
+  [[ -f $ws/.git ]] || return 0
+  IFS= read -r line < "$ws/.git" || true
+  [[ $line == "gitdir: "* ]] || return 0
+  gitdir=${line#gitdir: }
+  if [[ $gitdir != /* ]]; then
+    echo "clod: $(tildify "$ws") is a git worktree with a relative gitdir; git won't work in the container" >&2
+    return 0
+  fi
+  [[ -d $gitdir && -r $gitdir/commondir ]] || return 0
+  IFS= read -r line < "$gitdir/commondir" || true
+  [[ $line == /* ]] || line=$gitdir/$line
+  common=$(cd "$line" 2>/dev/null && pwd -P) || return 0
+  if [[ ! -f $common/HEAD || ! -d $common/objects || -z ${common#/} || $common == "$HOME" ]]; then
+    echo "clod: $(tildify "$ws")'s git directory $common doesn't look like one; not mounted" >&2
+    return 0
+  fi
+  case $common/ in
+    "$clod_dir"/*)
+      echo "clod: $(tildify "$ws")'s git directory is under $(tildify "$clod_dir"); not mounted" >&2
+      return 0
+      ;;
+  esac
+  mkdir -p "$common/hooks"
+  mount_arg "$common" "$common"
+  run_args+=(--mount "$REPLY")
+  if grep -qiE '^[[:space:]]*worktreeconfig[[:space:]]*=[[:space:]]*true' "$common/config" 2>/dev/null; then
+    for f in "$common"/worktrees/*/; do
+      [[ -d $f ]] || continue
+      [[ -e ${f}config.worktree ]] || : > "${f}config.worktree"
+      mount_arg "${f}config.worktree" "${f}config.worktree" ,readonly
+      run_args+=(--mount "$REPLY")
+    done
+  fi
+  for f in config hooks modules; do
+    [[ -e $common/$f ]] || continue
+    mount_arg "$common/$f" "$common/$f" ,readonly
+    run_args+=(--mount "$REPLY")
+  done
+  worktree_note=" · git $(tildify "$common")"
+}
+
 cmd_run() {
-  local run_args variants endpoint sock mount probe sock_stat
+  local run_args variants endpoint sock mount probe sock_stat worktree_note=
   need_image
   need_home
   [[ -n $dc_note ]] && echo "$dc_note" >&2
@@ -3059,6 +3110,7 @@ cmd_run() {
     mount_arg "$workspace_src" /workspace
     run_args+=(--mount "$REPLY" -e "CLOD_WORKSPACE=$workspace_label")
     [[ $workspace != vol:* ]] && run_args+=(-e "CLOD_WORKSPACE_PATH=$workspace_label")
+    [[ $workspace != vol:* ]] && worktree_mounts "$workspace"
   fi
   [[ -n $tz ]] && run_args+=(-e "TZ=$tz")
   settle_ports
@@ -3129,7 +3181,7 @@ cmd_run() {
       [[ -n ${!v:-} ]] && run_args+=(-e "$v")
     done
   fi
-  echo "clod ⌂ $home_label ⬢ $image · ${#vars[@]} vars${workspace_opt:+ · $workspace_label}${scratch:+ · scratch}${docker_socket:+ · Docker socket}${clipboard_on:+ · clipboard}" >&2
+  echo "clod ⌂ $home_label ⬢ $image · ${#vars[@]} vars${workspace_opt:+ · $workspace_label}${scratch:+ · scratch}${worktree_note}${docker_socket:+ · Docker socket}${clipboard_on:+ · clipboard}" >&2
   # Images are local: clod builds them, so a mistyped name must not pull one.
   exec docker run --rm --pull=never --env-file <(printf '%s\n' ${vars[@]+"${vars[@]}"}) "${run_args[@]}" "$tag" "$command" "$@"
 }

@@ -53,6 +53,7 @@ The container defines what the agent can reach; within it, the agent runs unrest
 
 - Claude Code runs with `--dangerously-skip-permissions` unless its arguments choose a permission mode, and Codex with `--dangerously-bypass-approvals-and-sandbox`
 - The workspace and the whole container home (`~/.clod/homes/<name>`, not the user's own home) are mounted read-write. A new home starts empty and holds only what the user gives it (logins made in the container, copied keys), and all of that is visible to the agent; so are the variables passed in from the `.envrc`
+- When a directory workspace is a linked git worktree (`.git` a file with an absolute `gitdir:`), `worktree_mounts` mounts the main repository's common git directory (from the gitdir's `commondir`, read as files: clod never runs git on the workspace) read-write at its host path, with `config`, `hooks` (created if missing), `modules` and, under `extensions.worktreeConfig`, every `worktrees/*/config.worktree` (created empty if missing) read-only, since those make host git run programs. It refuses a common dir that isn't a git directory, is `/` or `$HOME`, or lies under `~/.clod`; a relative gitdir gets a note and no mount
 - The container has normal outbound network access and can reach host services via `host.docker.internal`
 - With `--clipboard`, the agent can read the host clipboard's image whenever it likes during the run
 - With `--docker`, the agent has the Docker socket, which is root on the Docker host (on macOS, the VM, which mounts the user's home folder): it removes the boundary entirely
